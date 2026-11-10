@@ -1,0 +1,5 @@
+# Generated offline by scripts/lock_python_dependencies.py; selected versions are frozen.
+# CPython 3.12: Windows amd64 / Linux glibc >= 2.28 amd64; wheels only.
+# Install with pip --require-hashes --only-binary=:all: -r this-file.
+setuptools==84.2.1 \
+    --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2

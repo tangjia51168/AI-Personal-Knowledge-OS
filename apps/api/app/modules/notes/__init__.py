@@ -1,0 +1,1 @@
+"""Snapshot-grounded knowledge notes."""

@@ -1,0 +1,155 @@
+# Standalone runtime. NEVER combine with the development/acceptance Compose files.
+# PostgreSQL/pgvector, authenticated Redis and private HTTPS S3 are operator resources.
+name: knowledge-os-production
+
+x-runtime: &runtime
+  image: ${KOS_API_IMAGE:?supply reviewed repository@sha256 digest}
+  pull_policy: never
+  env_file: ["${KOS_RUNTIME_ENV:?supply absolute private runtime env path}"]
+  read_only: true
+  tmpfs: ["/tmp:size=67108864,mode=1777"]
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 128
+  mem_limit: 768m
+  cpus: 1.0
+  networks: [services]
+  restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  api:
+    <<: *runtime
+    environment:
+      APP_ENV: production
+      MIGRATION_DATABASE_URL: null
+      REGISTRATION_ENABLED: "false"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--no-proxy-headers", "--limit-concurrency", "64", "--timeout-keep-alive", "5"]
+    networks: [services, application]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/health/ready', headers={'Host':'api'}), timeout=12)"]
+      interval: 20s
+      timeout: 15s
+      retries: 5
+  worker:
+    <<: *runtime
+    environment:
+      APP_ENV: production
+      MIGRATION_DATABASE_URL: null
+      REGISTRATION_ENABLED: "false"
+    command: ["celery", "-A", "worker.celery_app:celery_app", "worker", "--loglevel=warning", "--concurrency=2"]
+    depends_on: {api: {condition: service_healthy}}
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A worker.celery_app:celery_app inspect ping -d celery@$$HOSTNAME --timeout=5"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+  beat:
+    <<: *runtime
+    environment:
+      APP_ENV: production
+      MIGRATION_DATABASE_URL: null
+      REGISTRATION_ENABLED: "false"
+    command: ["celery", "-A", "worker.celery_app:celery_app", "beat", "--loglevel=warning", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on: {api: {condition: service_healthy}}
+    mem_limit: 256m
+    cpus: 0.5
+  web:
+    image: ${KOS_WEB_IMAGE:?supply reviewed repository@sha256 digest}
+    pull_policy: never
+    environment: {API_BASE_URL: "http://api:8000"}
+    networks: [edge, application]
+    read_only: true
+    tmpfs: ["/tmp:size=67108864,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    depends_on: {api: {condition: service_healthy}}
+    restart: unless-stopped
+    logging: *logging
+  gateway:
+    image: ${KOS_GATEWAY_IMAGE:?supply reviewed repository@sha256 digest}
+    pull_policy: never
+    user: "101:101"
+    entrypoint: ["nginx"]
+    command: ["-g", "daemon off;"]
+    networks: [edge]
+    ports: ["${KOS_BIND_ADDRESS:-127.0.0.1}:443:8443"]
+    volumes:
+      - type: bind
+        source: ${KOS_GATEWAY_CONFIG:?supply generated nginx.conf absolute path}
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${KOS_TLS_CERT:?supply full-chain certificate absolute path}
+        target: /etc/nginx/tls/server.crt
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${KOS_TLS_KEY:?supply TLS private key absolute path}
+        target: /etc/nginx/tls/server.key
+        read_only: true
+        bind: {create_host_path: false}
+    read_only: true
+    tmpfs: ["/tmp:size=33554432,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.5
+    depends_on: {web: {condition: service_healthy}}
+    restart: unless-stopped
+    logging: *logging
+  migrate:
+    image: ${KOS_API_IMAGE:?supply reviewed repository@sha256 digest}
+    pull_policy: never
+    env_file: ["${KOS_MIGRATION_ENV:?supply separate private migration env path}"]
+    command: ["alembic", "upgrade", "0031_collections"]
+    networks: [services]
+    read_only: true
+    tmpfs: ["/tmp:size=33554432,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 64
+    restart: "no"
+    profiles: ["maintenance"]
+    logging: *logging
+  preflight:
+    <<: *runtime
+    environment:
+      APP_ENV: production
+      MIGRATION_DATABASE_URL: null
+      REGISTRATION_ENABLED: "false"
+    command: ["python", "-c", "from app.core.config import get_settings; from app.core.production import validate_production; validate_production(get_settings()); print('PASS: production configuration only')"]
+    network_mode: none
+    networks: !reset []
+    restart: "no"
+    profiles: ["maintenance"]
+  provision:
+    <<: *runtime
+    environment:
+      APP_ENV: production
+      MIGRATION_DATABASE_URL: null
+      REGISTRATION_ENABLED: "false"
+    command: ["python", "-m", "app.modules.identity.provision", "--create-owner"]
+    stdin_open: true
+    tty: true
+    restart: "no"
+    profiles: ["maintenance"]
+
+networks:
+  edge: {}
+  application: {internal: true}
+  services: {}

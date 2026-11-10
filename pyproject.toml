@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools==84.2.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "knowledge-os"
+version = "0.1.0"
+description = "AI Personal Knowledge OS engineering foundation"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1",
+  "pydantic-settings>=2.7,<3", "sqlalchemy>=2.0.38,<3",
+  "psycopg[binary]>=3.2,<4", "alembic>=1.14,<2",
+  "redis>=5.2,<7", "celery[redis]>=5.4,<6",
+  "boto3>=1.36,<2",
+  "cryptography>=50,<51", "httpx>=0.28,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9", "httpx>=0.28,<1", "ruff>=0.11,<1", "mypy>=1.15,<2"]
+
+[tool.setuptools.packages.find]
+where = ["apps/api", "apps/worker"]
+include = ["app*", "worker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["apps/api/tests", "apps/worker/tests", "tests"]
+markers = ["integration: requires live PostgreSQL, Redis, MinIO and/or Worker"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["apps/api/app", "apps/worker/worker"]
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = true

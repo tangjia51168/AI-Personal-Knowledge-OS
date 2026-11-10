@@ -1,0 +1,18 @@
+# Local scoped MinIO identity. Bootstrap/operator credentials stay outside runtime containers.
+# Both --env-file .env.acceptance and --env-file .env.storage-runtime.acceptance are required.
+services:
+  api:
+    environment:
+      S3_ACCESS_KEY: ${S3_RUNTIME_ACCESS_KEY:?run scripts/provision_storage_runtime.py --acceptance}
+      S3_SECRET_KEY: ${S3_RUNTIME_SECRET_KEY:?run scripts/provision_storage_runtime.py --acceptance}
+      S3_SESSION_TOKEN: ""
+  worker:
+    environment:
+      S3_ACCESS_KEY: ${S3_RUNTIME_ACCESS_KEY:?run scripts/provision_storage_runtime.py --acceptance}
+      S3_SECRET_KEY: ${S3_RUNTIME_SECRET_KEY:?run scripts/provision_storage_runtime.py --acceptance}
+      S3_SESSION_TOKEN: ""
+  beat:
+    environment:
+      S3_ACCESS_KEY: ${S3_RUNTIME_ACCESS_KEY:?run scripts/provision_storage_runtime.py --acceptance}
+      S3_SECRET_KEY: ${S3_RUNTIME_SECRET_KEY:?run scripts/provision_storage_runtime.py --acceptance}
+      S3_SESSION_TOKEN: ""

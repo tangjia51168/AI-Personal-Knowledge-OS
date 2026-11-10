@@ -1,0 +1,45 @@
+import { expect, test } from "@playwright/test";
+
+test.use({trace:"off",screenshot:"off",video:"off"});
+
+test("long analysis displays persisted stages, exact tail evidence, export studio and mobile safely", async ({page}) => {
+  if (process.env.RUN_ACCOUNT_E2E !== "1" || !process.env.E2E_LONG_EMAIL || !process.env.E2E_LONG_PASSWORD) throw new Error("Missing dedicated long fixture");
+  let paid = 0;
+  page.on("request", request => { if (request.method() === "POST" && /\/(summarize|ai-test)$/.test(new URL(request.url()).pathname)) paid++; });
+  await page.goto("/account#knowledge");
+  await page.getByLabel("电子邮箱").fill(process.env.E2E_LONG_EMAIL);
+  await page.getByLabel("密码（12–256 字符）").fill(process.env.E2E_LONG_PASSWORD);
+  await page.getByRole("button",{name:"登录",exact:true}).click();
+  const notes = page.getByRole("region",{name:"知识笔记",exact:true});
+  await notes.getByRole("button",{name:"刷新知识笔记",exact:true}).click();
+  await notes.getByRole("button",{name:"打开笔记",exact:true}).first().click();
+  const reader = page.getByRole("article",{name:"结构化笔记阅读"});
+  await reader.getByText("分段分析记录 · 2 段",{exact:true}).click();
+  const stage = reader.getByRole("region",{name:"第 2 段分析",exact:true});
+  await expect(stage).toBeVisible();
+  const lastCitation = stage.getByRole("button",{name:/定位原文证据/}).last();
+  const key = await lastCitation.innerText();
+  await lastCitation.click();
+  await expect(reader.getByRole("region",{name:`原文证据 ${key}`,exact:true})).toContainText("125毫秒");
+  await page.screenshot({path:".cache/module-results/long-analysis-desktop.png",fullPage:true});
+  await page.getByRole("button",{name:"切换深色主题"}).click();
+  await page.screenshot({path:".cache/module-results/reference-workspace-dark.png",fullPage:true});
+  await page.getByRole("button",{name:"切换浅色主题"}).click();
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await stage.screenshot({path:".cache/module-results/long-analysis-mobile.png"});
+  await page.locator('.account-module-nav a[href="#exports"]').click();
+  const studio = page.getByRole("region",{name:"笔记导出中心",exact:true});
+  await studio.getByRole("button",{name:"查找可导出笔记",exact:true}).click();
+  await studio.getByRole("button",{name:"选择导出版本",exact:true}).click();
+  await expect(studio.getByRole("article",{name:"结构化笔记阅读"})).toBeVisible();
+  const help = studio.locator(".export-format-help");
+  await expect(help).not.toHaveAttribute("open", "");
+  await help.getByText("格式说明与 Obsidian 使用方法",{exact:true}).click();
+  await expect(help.getByText(/Obsidian ZIP：解压到新目录/)).toBeVisible();
+  await help.getByText("格式说明与 Obsidian 使用方法",{exact:true}).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.setViewportSize({width:1440,height:1000});
+  await studio.screenshot({path:".cache/module-results/reference-export-studio.png"});
+  expect(paid).toBe(0);
+});

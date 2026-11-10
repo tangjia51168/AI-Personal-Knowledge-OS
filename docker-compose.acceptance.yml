@@ -1,0 +1,51 @@
+# Dedicated project/ports/volumes. Never run integration tests against the main developer DB.
+# Requires Compose >= 2.24.4 for !override.
+# A recovery volume may be selected after preserving the original; never repaired in place.
+volumes:
+  redis_data:
+    name: ${ACCEPTANCE_REDIS_VOLUME:-knowledge-os-acceptance_redis_data}
+services:
+  postgres:
+    ports: !override ["127.0.0.1:15432:5432"]
+  redis:
+    ports: !override ["127.0.0.1:16379:6379"]
+  minio:
+    ports: !override ["127.0.0.1:19000:9000", "127.0.0.1:19001:9001"]
+  api:
+    ports: !override ["127.0.0.1:18000:8000"]
+    environment:
+      AUTH_REGISTER_LIMIT: "100"
+      # Public test-only encryption key. NEVER use this acceptance override in production.
+      CREDENTIAL_KEYS: '{"acceptance":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}'
+      CREDENTIAL_ACTIVE_KEY: acceptance
+  web:
+    ports: !override ["127.0.0.1:13000:3000"]
+
+  acceptance:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/python.Dockerfile
+      target: test
+    environment:
+      APP_ENV: test
+      RUN_INTEGRATION: "1"
+      RUN_STACK_INTEGRATION: "1"
+      # Reset only this test container's direct-source IP buckets for the closed
+      # authentication/content action scopes listed in tests/conftest.py.
+      # Production limits and all other client/identity buckets stay in effect.
+      ISOLATE_STACK_AUTH_LIMIT: "1"
+      DATABASE_URL: postgresql+psycopg://knowledge_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-knowledge_os}
+      MIGRATION_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-knowledge_admin}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-knowledge_os}
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:-knowledge-os}
+      SYSTEM_API_TOKEN: ${SYSTEM_API_TOKEN:?set SYSTEM_API_TOKEN}
+      API_BASE_URL: http://api:8000
+    command: ["python", "-m", "pytest", "-m", "integration", "-v", "-o", "cache_dir=/tmp/pytest-cache", "--junitxml=/tmp/acceptance.xml"]
+    depends_on:
+      api: {condition: service_healthy}
+      worker: {condition: service_healthy}
+    profiles: ["acceptance"]
+    restart: "no"

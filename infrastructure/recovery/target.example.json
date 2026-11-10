@@ -1,0 +1,16 @@
+{
+  "purpose": "Information only. This file does not deploy or grant access.",
+  "target_kind": "second-physical-host-or-user-owned-cloud",
+  "host_alias": "fill-existing-SSH-or-VPN-profile-name",
+  "configuration_file": "absolute-path-on-your-device; never paste secrets in chat",
+  "workspace_on_target": "/srv/knowledge-os-recovery",
+  "archive_storage": "fill-private-independent-storage-location",
+  "key_escrow": "fill-separate-offline-key-custodian-or-KMS-profile",
+  "network": "private-VPN-or-SSH-tunnel; no-public-app-port",
+  "allowed_scope": "create-new-isolated-instances; preserve-all-existing-data",
+  "target_rpo_minutes": null,
+  "target_rto_minutes": null,
+  "spend_limit": "no-new-spending-authorized",
+  "offsite_verified": false,
+  "production_cutover_authorized": false
+}

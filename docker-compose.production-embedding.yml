@@ -1,0 +1,36 @@
+# Optional. Append only to docker-compose.production.yml; operator supplies pinned files/image.
+services:
+  api:
+    environment:
+      LOCAL_EMBEDDING_ENDPOINT: http://embedding:8080
+    networks: [services, application, embedding]
+    depends_on: {embedding: {condition: service_healthy}}
+  embedding:
+    image: ${KOS_EMBEDDING_IMAGE:?supply reviewed embedding repository@sha256 digest}
+    pull_policy: never
+    user: "10001:10001"
+    volumes:
+      - type: bind
+        source: ${KOS_EMBEDDING_MODELS:?supply verified fixed model directory absolute path}
+        target: /model
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [embedding]
+    read_only: true
+    tmpfs: ["/tmp:size=33554432,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 2.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+networks:
+  embedding: {internal: true}

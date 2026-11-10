@@ -1,0 +1,158 @@
+name: knowledge-os
+
+x-python: &python
+  build:
+    context: .
+    dockerfile: infrastructure/docker/python.Dockerfile
+  environment: &python-env
+    APP_ENV: development
+    DATABASE_URL: postgresql+psycopg://knowledge_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-knowledge_os}
+    REDIS_URL: redis://redis:6379/0
+    S3_ENDPOINT_URL: http://minio:9000
+    S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+    S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    S3_SESSION_TOKEN: ${S3_SESSION_TOKEN:-}
+    S3_BUCKET: ${S3_BUCKET:-knowledge-os}
+    SYSTEM_API_TOKEN: ${SYSTEM_API_TOKEN:?set SYSTEM_API_TOKEN}
+    DOWNLOAD_SIGNING_KEY: ${DOWNLOAD_SIGNING_KEY:?set DOWNLOAD_SIGNING_KEY}
+    CORS_ORIGINS: '["http://localhost:3000"]'
+    CREDENTIAL_KEYS: ${CREDENTIAL_KEYS:-}
+    CREDENTIAL_ACTIVE_KEY: ${CREDENTIAL_ACTIVE_KEY:-v1}
+    OLLAMA_ENDPOINTS: ${OLLAMA_ENDPOINTS:-{}}
+    OPENAI_ENABLED: ${OPENAI_ENABLED:-false}
+    DEEPSEEK_ENABLED: ${DEEPSEEK_ENABLED:-false}
+    COLLECTOR_ENABLED: ${COLLECTOR_ENABLED:-false}
+    REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+    EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-false}
+    PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
+    SMTP_HOST: ${SMTP_HOST:-}
+    SMTP_PORT: ${SMTP_PORT:-587}
+    SMTP_USERNAME: ${SMTP_USERNAME:-}
+    SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    SMTP_FROM: ${SMTP_FROM:-}
+    SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+    TRUSTED_HOSTS: ${TRUSTED_HOSTS:-["localhost","127.0.0.1","api"]}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16@sha256:0dd3149a06e4579a0d70d8fef9945636cd514005e7237deb27f9b67886f8dc4f
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-knowledge_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-knowledge_os}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  minio:
+    image: knowledge-os/minio:RELEASE.2025-04-22T22-12-26Z-local
+    pull_policy: build
+    build:
+      context: ./.cache/minio
+      dockerfile: ../../infrastructure/docker/minio.Dockerfile
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    volumes: ["minio_data:/data"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/minio/health/live', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  storage-init:
+    <<: *python
+    command: ["python", "scripts/init_storage.py"]
+    volumes: ["./scripts:/workspace/scripts:ro"]
+    depends_on:
+      minio: {condition: service_started}
+    restart: "no"
+
+  migrate:
+    <<: *python
+    environment:
+      <<: *python-env
+      MIGRATION_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-knowledge_admin}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-knowledge_os}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+
+  api:
+    <<: *python
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--no-proxy-headers", "--limit-concurrency", "64", "--timeout-keep-alive", "5"]
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+      storage-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/health/ready', headers={'Host':'api'}), timeout=12)"]
+      interval: 20s
+      timeout: 15s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    <<: *python
+    command: ["celery", "-A", "worker.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A worker.celery_app:celery_app inspect ping -d celery@$$HOSTNAME --timeout=5"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  beat:
+    <<: *python
+    command: ["celery", "-A", "worker.celery_app:celery_app", "beat", "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      redis: {condition: service_healthy}
+    # DB outbox recovery dispatch runs every five seconds; no platform/AI schedule.
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

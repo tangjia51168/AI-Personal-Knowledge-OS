@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Knowledge OS · 工程预留",
+  "version": "0.1.0",
+  "description": "Phase 0 placeholder. No collection or credential access is implemented.",
+  "action": { "default_popup": "popup.html" },
+  "permissions": []
+}

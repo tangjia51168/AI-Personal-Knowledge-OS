@@ -1,0 +1,18 @@
+{
+  "repository": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+  "identity": "multilingual-minilm-l12-v2-quint8-avx2-e8f8c211-mean128-v1",
+  "dimensions": 384,
+  "max_tokens": 128,
+  "license": "Apache-2.0 (verify upstream model card before redistribution)",
+  "files": {
+    "onnx/model_quint8_avx2.onnx": {
+      "size": 118453870,
+      "sha256": "98a01d88b7de996cdea58c32ca71208c09968d143798814b2ea09d3439dc334f"
+    },
+    "tokenizer.json": {
+      "size": 9081518,
+      "sha256": "2c3387be76557bd40970cec13153b3bbf80407865484b209e655e5e4729076b8"
+    }
+  }
+}

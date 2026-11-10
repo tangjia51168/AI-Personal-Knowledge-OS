@@ -1,0 +1,6 @@
+# Test runner only; production never mounts tests or administrative credentials.
+services:
+  acceptance:
+    environment:
+      LOCAL_EMBEDDING_ENDPOINT: http://embedding:8080
+    networks: [default, embedding_private]

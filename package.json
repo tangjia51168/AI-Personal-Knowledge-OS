@@ -1,0 +1,20 @@
+{
+  "name": "ai-personal-knowledge-os",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/web"],
+  "engines": {"node": ">=22"},
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    }
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace=@knowledge-os/web",
+    "build": "npm run build --workspace=@knowledge-os/web",
+    "start": "npm run start --workspace=@knowledge-os/web",
+    "typecheck": "npm run typecheck --workspace=@knowledge-os/web",
+    "lint": "npm run lint --workspace=@knowledge-os/web",
+    "test:e2e": "npm run test:e2e --workspace=@knowledge-os/web"
+  }
+}

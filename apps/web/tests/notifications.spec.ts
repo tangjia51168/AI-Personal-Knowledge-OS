@@ -1,0 +1,51 @@
+import { expect, test } from "@playwright/test";
+test.use({ trace: "off", screenshot: "off", video: "off" });
+
+test("notification BFF enforces exact methods, query and authentication", async ({ page }) => {
+  const base = "/api/account/spaces/00000000-0000-0000-0000-000000000001/learning/notifications";
+  expect((await page.request.get(base)).status()).toBe(401);
+  expect((await page.request.post(base)).status()).toBe(405);
+  expect((await page.request.get(`${base}/preference`)).status()).toBe(405);
+  expect((await page.request.put(`${base}/test`)).status()).toBe(405);
+  expect((await page.request.get(`${base}?user_id=x`)).status()).toBe(422);
+  expect((await page.request.post(`${base}/test?recipient=x`)).status()).toBe(422);
+});
+
+test("actual opt-in inbox self test, read, pause and failure clearing on mobile", async ({ page }) => {
+  test.skip(process.env.RUN_ACCOUNT_E2E !== "1", "Explicit isolated accounts required");
+  const email = process.env.E2E_EXPLORER_EMAIL, password = process.env.E2E_EXPLORER_PASSWORD;
+  if (!email || !password) throw new Error("Missing isolated fixture");
+  await page.goto("/account#learning");
+  await page.getByLabel("电子邮箱", { exact: true }).fill(email);
+  await page.getByLabel("密码（12–256 字符）", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  const center = page.getByRole("region", { name: "提醒与通知", exact: true });
+  await center.getByRole("button", { name: "读取通知与订阅", exact: true }).click();
+  await expect(center).toContainText("提醒已关闭");
+  const consent = center.getByLabel("我确认当前订阅选项，并同意创建本次自测通知", { exact: true });
+  await expect(center.getByLabel("同时发送邮件", { exact: true })).toBeDisabled();
+  await expect(center.getByRole("button", { name: "保存提醒订阅", exact: true })).toBeDisabled();
+  await consent.check();
+  await center.getByRole("button", { name: "保存提醒订阅", exact: true }).click();
+  await expect(center.getByRole("status", { name: "通知状态", exact: true })).toContainText("提醒订阅已保存");
+  await consent.check();
+  await center.getByRole("button", { name: "发送本人自测", exact: true }).click();
+  await expect(center.getByRole("status", { name: "通知状态", exact: true })).toContainText("自测通知已持久保存");
+  await expect(center.getByText("提醒渠道自测", { exact: true })).toBeVisible();
+  await expect(center).toContainText("仅站内通知");
+  await center.getByRole("button", { name: "标为已读", exact: true }).click();
+  await expect(center.getByRole("button", { name: "已读", exact: true })).toBeDisabled();
+  await page.reload();
+  await center.getByRole("button", { name: "读取通知与订阅", exact: true }).click();
+  await expect(center.getByRole("button", { name: "已读", exact: true })).toBeDisabled();
+  await center.getByRole("button", { name: "关闭提醒", exact: true }).click();
+  await expect(center.getByRole("status", { name: "通知状态", exact: true })).toContainText("已关闭提醒");
+  await expect(center.getByText("提醒渠道自测", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await center.screenshot({ path: ".cache/module-results/notifications-mobile.png" });
+  await page.route("**/learning/notifications", route => route.abort());
+  await center.getByRole("button", { name: "读取通知与订阅", exact: true }).click();
+  await expect(center.getByRole("status", { name: "通知状态", exact: true })).toContainText("已清空旧数据");
+  await expect(center.getByText("提醒渠道自测", { exact: true })).toHaveCount(0);
+});
