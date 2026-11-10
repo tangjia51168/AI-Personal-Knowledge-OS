@@ -35,6 +35,8 @@ def test_public_payload_excludes_user_material_and_is_text_only():
     payload = release.public_payload(release.ROOT)
     assert "LICENSE" in payload and "apps/api/app/main.py" in payload
     assert "apps/web/src/app/account/collections.tsx" in payload
+    assert "apps/api/migrations/env.py" in payload
+    assert "apps/api/migrations/versions/0031_collections.py" in payload
     assert "infrastructure/gateway/nginx.conf" in payload
     assert "infrastructure/deployment/compose.env.example" in payload
     assert "AGENTS.md" not in payload

@@ -28,6 +28,7 @@ TOP = (
 TREES = (
     "apps/api/app",
     "apps/api/tests",
+    "apps/api/migrations",
     "apps/worker/worker",
     "apps/worker/tests",
     "apps/web/src",
@@ -82,6 +83,7 @@ DOCS = (
     "note-export",
     "notifications",
     "obsidian-export",
+    "open-source-release",
     "operations",
     "phase1-source-boundary",
     "project-status",
@@ -123,6 +125,7 @@ SUFFIXES = {
     ".lock",
     ".template",
     ".conf",
+    ".mako",
 }
 EXCLUDED = {
     "node_modules",

@@ -29,6 +29,8 @@ def execute(arguments: list[str], cwd: Path, *, input: str | None = None) -> str
         cwd=cwd,
         input=input,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         capture_output=True,
         timeout=120,
         env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"},
@@ -51,8 +53,16 @@ def credential(staging: Path) -> str:
     return token
 
 
-def api(token: str, route: str, *, payload: dict | None = None) -> tuple[int, dict]:
-    if not re.fullmatch(r"/(?:user|user/repos|repos/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+)", route):
+def api(
+    token: str, route: str, *, payload: dict | None = None, method: str = "POST"
+) -> tuple[int, dict]:
+    if method not in {"POST", "PATCH"}:
+        raise ValueError("INVALID_GITHUB_METHOD")
+    if not re.fullmatch(
+        r"/(?:user|user/repos|repos/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+"
+        r"(?:/git/(?:refs/heads/main|commits(?:/[a-f0-9]{40})?|trees))?)",
+        route,
+    ):
         raise ValueError("INVALID_GITHUB_ROUTE")
     config = (
         f'url = "https://api.github.com{route}"\n'
@@ -65,7 +75,7 @@ def api(token: str, route: str, *, payload: dict | None = None) -> tuple[int, di
         # curl config uses its own double-quoted string escapes. No shell involved.
         body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
         escaped = body.replace("\\", "\\\\").replace('"', '\\"')
-        config += 'request = "POST"\nheader = "Content-Type: application/json"\n'
+        config += f'request = "{method}"\nheader = "Content-Type: application/json"\n'
         config += f'data = "{escaped}"\n'
     result = subprocess.run(
         [
@@ -83,6 +93,8 @@ def api(token: str, route: str, *, payload: dict | None = None) -> tuple[int, di
         input=config,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         timeout=40,
     )
     if result.returncode:
